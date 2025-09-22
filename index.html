@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Zenchain Swap dApp</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial; background:#0f172a; color:#e6eef8; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0;}
+    .card{width:960px; background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); padding:20px; border-radius:12px; box-shadow:0 10px 30px rgba(2,6,23,0.6);}
+    .byline{background:#071025; padding:8px 12px; border-radius:8px; display:inline-block; color:#7fb0d9; font-weight:700; margin-bottom:12px;}
+    header{display:flex; gap:16px; align-items:center;}
+    header img{width:56px;height:56px;}
+    h1{margin:0;font-size:20px}
+    label{display:block;margin-top:10px;color:#cfe6ff}
+    select,input{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:rgba(255,255,255,0.02);color:inherit;margin-top:6px}
+    .row{display:flex;gap:12px}
+    .col{flex:1}
+    button{margin-top:12px;padding:10px 14px;border-radius:10px;background:linear-gradient(90deg,#0ea5a8,#7c3aed);border:none;color:white;cursor:pointer}
+    footer{margin-top:14px;display:flex;gap:12px;align-items:center;justify-content:space-between}
+    a{color:#9fc5ff}
+    .small{font-size:13px;color:#9fb4d7}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="byline">BY YOUCEF GOJO</div>
+    <header>
+      <img src="logo.png" alt="logo" onerror="this.style.display='none'"/>
+      <div>
+        <h1>Zenchain Swap dApp — Testnet</h1>
+        <div class="small">Router: <code id="routerAddr">0x0437B774c28ed331936fC425EF18171A41C2210B</code></div>
+      </div>
+      <div style="margin-left:auto;text-align:right">
+        <button id="connectBtn">Connect MetaMask</button>
+        <div id="account" class="small"></div>
+      </div>
+    </header>
+
+    <section style="margin-top:18px">
+      <h3>Swap</h3>
+      <div class="row">
+        <div class="col">
+          <label>From Token</label>
+          <select id="fromSelect"></select>
+        </div>
+        <div class="col">
+          <label>To Token</label>
+          <select id="toSelect"></select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col">
+          <label>Amount (human)</label>
+          <input id="amountIn" placeholder="e.g. 1.5" />
+        </div>
+        <div class="col">
+          <label>Min Amount Out (human, optional)</label>
+          <input id="minOut" placeholder="e.g. 0.0" />
+        </div>
+      </div>
+      <label>Deadline (seconds)</label>
+      <input id="deadline" value="300" />
+      <button id="swapBtn">Swap Exact Tokens For Tokens</button>
+      <div id="swapStatus" class="small"></div>
+
+      <div style="margin-top:10px">
+        <label>Add custom token by address</label>
+        <div style="display:flex;gap:8px;">
+          <input id="customAddr" placeholder="0x..." />
+          <button id="addCustom">Add</button>
+        </div>
+      </div>
+    </section>
+
+    <section style="margin-top:18px">
+      <h3>Add Liquidity</h3>
+      <div class="row">
+        <div class="col"><label>Token A</label><select id="aSelect"></select></div>
+        <div class="col"><label>Token B</label><select id="bSelect"></select></div>
+      </div>
+      <div class="row">
+        <div class="col"><label>Amount A</label><input id="amountA" /></div>
+        <div class="col"><label>Amount B</label><input id="amountB" /></div>
+      </div>
+      <button id="addLiqBtn">Add Liquidity</button>
+      <div id="addLiqStatus" class="small"></div>
+    </section>
+
+    <section style="margin-top:18px">
+      <h3>Remove Liquidity</h3>
+      <div class="row">
+        <div class="col"><label>Token A</label><select id="rA"></select></div>
+        <div class="col"><label>Token B</label><select id="rB"></select></div>
+      </div>
+      <label>Liquidity amount (human)</label>
+      <input id="rLiquidity" />
+      <button id="removeLiqBtn">Remove Liquidity</button>
+      <div id="removeLiqStatus" class="small"></div>
+    </section>
+
+    <footer>
+      <div>
+        <a href="https://x.com/zen_chain?t=1D5E4i9cgiyKBWyxbDmN_Q&s=09" target="_blank">Zenchain Twitter (X)</a> ·
+        <a href="https://discord.gg/zenchain" target="_blank">Zenchain Discord</a>
+      </div>
+      <div class="small">Built for Zenchain Testnet</div>
+    </footer>
+  </div>
+
+<script>
+const routerAddress = "0x0437B774c28ed331936fC425EF18171A41C2210B";
+// Minimal ABI entries used
+const routerAbi = [
+  "function addLiquidity(address tokenA,address tokenB,uint amountADesired,uint amountBDesired,uint amountAMin,uint amountBMin,address to,uint deadline) returns (uint,uint,uint)",
+  "function removeLiquidity(address tokenA,address tokenB,uint liquidity,uint amountAMin,uint amountBMin,address to,uint deadline) returns (uint,uint)",
+  "function swapExactTokensForTokens(uint amountIn,uint amountOutMin,address[] calldata path,address to,uint deadline) returns (uint[] memory amounts)",
+  "function getAmountsOut(uint amountIn,address[] memory path) view returns (uint[] memory amounts)"
+];
+
+// ERC20 minimal ABI for symbol/decimals/approve
+const erc20Abi = [
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)"
+];
+
+let provider, signer, routerContract;
+const tokens = [
+  {
+    "address": "0xdc2b839dC176f152bc74C008DE8dD6475Bb0d25C",
+    "symbol": "USDC",
+    "decimals": 18,
+    "name": "USDC (Testnet)"
+  }
+];
+
+function saveAndFill() {
+  // populate selects
+  const selects = ["fromSelect","toSelect","aSelect","bSelect","rA","rB"];
+  selects.forEach(id=>{
+    const sel = document.getElementById(id);
+    sel.innerHTML = "";
+    tokens.forEach((t,idx)=>{
+      const opt = document.createElement('option');
+      opt.value = t.address;
+      opt.textContent = `${t.symbol} — ${t.address.substring(0,8)}...`;
+      sel.appendChild(opt);
+    });
+  });
+}
+
+async function addTokenByAddress(addr) {
+  try {
+    if(!provider) {
+      alert('Connect wallet first to fetch token info');
+      return;
+    }
+    const c = new ethers.Contract(addr, erc20Abi, provider);
+    const symbol = await c.symbol();
+    const decimals = await c.decimals();
+    tokens.push({address: addr, symbol, decimals, name: symbol});
+    saveAndFill();
+    alert('Token added: ' + symbol);
+  } catch(e) {
+    console.error(e);
+    alert('Failed to add token: ' + (e.message || e));
+  }
+}
+
+document.getElementById('addCustom').onclick = ()=>{
+  const a = document.getElementById('customAddr').value.trim();
+  if(!a) return alert('Enter token address');
+  addTokenByAddress(a);
+};
+
+document.getElementById('connectBtn').addEventListener('click', async ()=>{
+  if(!window.ethereum) return alert('MetaMask not detected');
+  provider = new ethers.providers.Web3Provider(window.ethereum, 'any');
+  await provider.send('eth_requestAccounts', []);
+  signer = provider.getSigner();
+  const account = await signer.getAddress();
+  document.getElementById('account').textContent = account;
+  routerContract = new ethers.Contract(routerAddress, routerAbi, signer);
+  saveAndFill();
+});
+
+async function ensureApproval(tokenAddr, owner, amount) {
+  const token = new ethers.Contract(tokenAddr, erc20Abi, signer);
+  const allowance = await token.allowance(owner, routerAddress);
+  if(allowance.lt(amount)) {
+    const tx = await token.approve(routerAddress, amount);
+    await tx.wait();
+  }
+}
+
+document.getElementById('swapBtn').addEventListener('click', async ()=>{
+  try {
+    if(!routerContract) return alert('Connect first');
+    const from = document.getElementById('fromSelect').value;
+    const to = document.getElementById('toSelect').value;
+    const tFrom = tokens.find(t=>t.address.toLowerCase()===from.toLowerCase());
+    const tTo = tokens.find(t=>t.address.toLowerCase()===to.toLowerCase());
+    const amountHuman = document.getElementById('amountIn').value;
+    const amountIn = ethers.utils.parseUnits(amountHuman || '0', tFrom.decimals);
+    const minOutHuman = document.getElementById('minOut').value || '0';
+    const amountOutMin = ethers.utils.parseUnits(minOutHuman, tTo.decimals);
+    const deadline = Math.floor(Date.now()/1000) + parseInt(document.getElementById('deadline').value||'300',10);
+    const toAddr = await signer.getAddress();
+    document.getElementById('swapStatus').textContent = 'Approving and sending...';
+    await ensureApproval(from, toAddr, amountIn);
+    const path = [from, to];
+    const tx = await routerContract.swapExactTokensForTokens(amountIn, amountOutMin, path, toAddr, deadline);
+    document.getElementById('swapStatus').textContent = 'Sent: ' + tx.hash;
+    await tx.wait();
+    document.getElementById('swapStatus').textContent = 'Confirmed: ' + tx.hash;
+  } catch(e) {
+    console.error(e);
+    document.getElementById('swapStatus').textContent = 'Error: ' + (e.message || e);
+  }
+});
+
+document.getElementById('addLiqBtn').addEventListener('click', async ()=>{
+  try {
+    if(!routerContract) return alert('Connect first');
+    const tokenA = document.getElementById('aSelect').value;
+    const tokenB = document.getElementById('bSelect').value;
+    const tA = tokens.find(t=>t.address.toLowerCase()===tokenA.toLowerCase());
+    const tB = tokens.find(t=>t.address.toLowerCase()===tokenB.toLowerCase());
+    const amountAHuman = document.getElementById('amountA').value || '0';
+    const amountBHuman = document.getElementById('amountB').value || '0';
+    const amountA = ethers.utils.parseUnits(amountAHuman, tA.decimals);
+    const amountB = ethers.utils.parseUnits(amountBHuman, tB.decimals);
+    const toAddr = await signer.getAddress();
+    const deadline = Math.floor(Date.now()/1000) + 300;
+    document.getElementById('addLiqStatus').textContent = 'Approving tokens...';
+    await ensureApproval(tokenA, toAddr, amountA);
+    await ensureApproval(tokenB, toAddr, amountB);
+    const tx = await routerContract.addLiquidity(tokenA, tokenB, amountA, amountB, 0, 0, toAddr, deadline);
+    document.getElementById('addLiqStatus').textContent = 'Sent: ' + tx.hash;
+    await tx.wait();
+    document.getElementById('addLiqStatus').textContent = 'Confirmed: ' + tx.hash;
+  } catch(e) {
+    console.error(e);
+    document.getElementById('addLiqStatus').textContent = 'Error: ' + (e.message || e);
+  }
+});
+
+document.getElementById('removeLiqBtn').addEventListener('click', async ()=>{
+  try {
+    if(!routerContract) return alert('Connect first');
+    const tokenA = document.getElementById('rA').value;
+    const tokenB = document.getElementById('rB').value;
+    const tA = tokens.find(t=>t.address.toLowerCase()===tokenA.toLowerCase());
+    const liquidityHuman = document.getElementById('rLiquidity').value || '0';
+    // assume liquidity token decimals 18 for input convenience
+    const liquidity = ethers.utils.parseUnits(liquidityHuman, 18);
+    const toAddr = await signer.getAddress();
+    const deadline = Math.floor(Date.now()/1000) + 300;
+    const tx = await routerContract.removeLiquidity(tokenA, tokenB, liquidity, 0, 0, toAddr, deadline);
+    document.getElementById('removeLiqStatus').textContent = 'Sent: ' + tx.hash;
+    await tx.wait();
+    document.getElementById('removeLiqStatus').textContent = 'Confirmed: ' + tx.hash;
+  } catch(e) {
+    console.error(e);
+    document.getElementById('removeLiqStatus').textContent = 'Error: ' + (e.message || e);
+  }
+});
+
+// initial fill
+saveAndFill();
+</script>
+</body>
+</html>
